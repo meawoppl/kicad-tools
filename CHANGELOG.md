@@ -50,6 +50,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Per-footprint and per-LCSC-part XY offsets for JLCPCB CPL export.**
+  `jlcpcb_rotations.yaml` entries may now be mappings carrying
+  `rotation`, `offset_x_mm` and `offset_y_mm` (bare numbers still mean a
+  rotation), and a new `lcsc_corrections` section keys corrections by LCSC
+  part number read from the footprint's LCSC property. Offsets are
+  footprint-local (KiCad footprint-editor axes, +Y down), rotated with the
+  part like a pad offset and Y-mirrored on `B.Cu`; the convention is checked
+  against a pcbnew oracle at 0/90/180/270° on both sides. New
+  `PlacementCorrection(s)` / `load_placement_corrections` and a
+  `placement_corrections` argument on `export_pnp` / `get_pnp_formatter`;
+  `ManufacturerProfile.placement_corrections` is used by `AssemblyPackage`.
+  Ships five LCSC corrections verified against a JLCPCB assembly preview:
+  C113281 (TSSOP-20), C51118 (SOT-23-5) and C7519 (SOT-23-6) at 270°, the
+  latter two overriding the package-wide `SOT-23*` 180° rule for those parts
+  only; C221660 (JS102011SAQN) −2.75 mm and C165948 (TYPE-C-31-M-12)
+  −1.425 mm local Y.
+
 - **Native emission of the different-net SMD-pad clearance floor**
   (Issue #5059). The `SMD Pad Clearance` rule is now emitted into the
   generated `.kicad_dru` (and the shipped JLCPCB templates) whenever a

@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 from kicad_tools.exceptions import ConfigurationError
 
 if TYPE_CHECKING:
+    from ..manufacturers.base import PlacementCorrections
     from ..schema.pcb import Footprint
 
 
@@ -31,6 +32,7 @@ class PlacementData:
     y: float  # mm from origin
     rotation: float  # degrees
     layer: str  # F.Cu or B.Cu
+    lcsc: str = ""  # LCSC part number from footprint properties, if any
 
 
 @dataclass
@@ -66,9 +68,19 @@ class PnPFormatter(ABC):
         self,
         config: PnPExportConfig | None = None,
         rotation_corrections: dict[str, float] | None = None,
+        placement_corrections: PlacementCorrections | None = None,
     ):
+        from kicad_tools.manufacturers.base import PlacementCorrections
+
         self.config = config or PnPExportConfig()
         self.rotation_corrections: dict[str, float] = rotation_corrections or {}
+        # ``placement_corrections`` (footprint globs + LCSC entries, with
+        # optional XY offsets) supersedes the legacy rotation-only dict.
+        self.placement_corrections: PlacementCorrections = (
+            placement_corrections
+            if placement_corrections
+            else PlacementCorrections.from_rotations(self.rotation_corrections)
+        )
 
     @abstractmethod
     def format(self, placements: list[PlacementData]) -> str:
@@ -81,37 +93,44 @@ class PnPFormatter(ABC):
         pass
 
     def apply_transforms(self, placement: PlacementData) -> PlacementData:
-        """Apply coordinate transforms and per-footprint rotation corrections.
+        """Apply coordinate transforms and per-part placement corrections.
 
-        When ``rotation_corrections`` is populated (e.g. from a
-        manufacturer preset), the footprint name is matched against the
-        correction database and the corresponding offset is added to the
-        component rotation **before** the global ``rotation_offset``.
+        The part's correction is resolved from ``placement_corrections``
+        (LCSC number first, then footprint glob; see
+        :meth:`~kicad_tools.manufacturers.base.PlacementCorrections.resolve`).
+        Its rotation is added to the component rotation **before** the
+        global ``rotation_offset``.  Its XY offset is footprint-local
+        (KiCad footprint-editor axes, +Y down): it is rotated by the part's
+        native placement angle with the same transform KiCad applies to pad
+        coordinates, with local Y negated first for ``B.Cu`` parts (KiCad
+        mirrors pad Y when flipping a footprint), and added to the position
+        before the global offsets and mirroring.
         """
-        from kicad_tools.manufacturers.base import match_rotation_correction
+        from kicad_tools.core.geometry import rotate_pad_offset
 
-        x = placement.x + self.config.x_offset
-        y = placement.y + self.config.y_offset
+        fp_rotation, local_dx, local_dy = self.placement_corrections.resolve(
+            placement.footprint, placement.lcsc
+        )
+
+        x, y = placement.x, placement.y
+        if local_dx or local_dy:
+            if placement.layer == "B.Cu":
+                local_dy = -local_dy
+            dx, dy = rotate_pad_offset(local_dx, local_dy, placement.rotation)
+            x += dx
+            y += dy
+
+        x += self.config.x_offset
+        y += self.config.y_offset
 
         if self.config.mirror_x:
             x = -x
         if self.config.mirror_y:
             y = -y
 
-        # Per-footprint rotation correction
-        fp_correction = match_rotation_correction(placement.footprint, self.rotation_corrections)
+        rotation = (placement.rotation + fp_rotation + self.config.rotation_offset) % 360
 
-        rotation = (placement.rotation + fp_correction + self.config.rotation_offset) % 360
-
-        return PlacementData(
-            reference=placement.reference,
-            value=placement.value,
-            footprint=placement.footprint,
-            x=x,
-            y=y,
-            rotation=rotation,
-            layer=placement.layer,
-        )
+        return replace(placement, x=x, y=y, rotation=rotation)
 
     def filter_placements(self, placements: list[PlacementData]) -> list[PlacementData]:
         """Filter placements based on config."""
@@ -140,10 +159,11 @@ class JLCPCBPnPFormatter(PnPFormatter):
         self,
         config: PnPExportConfig | None = None,
         rotation_corrections: dict[str, float] | None = None,
+        placement_corrections: PlacementCorrections | None = None,
     ):
         if config is None:
             config = PnPExportConfig(exclude_tht=True)
-        super().__init__(config, rotation_corrections)
+        super().__init__(config, rotation_corrections, placement_corrections)
 
     def get_headers(self) -> list[str]:
         """JLCPCB CPL column headers."""
@@ -332,6 +352,7 @@ def get_pnp_formatter(
     manufacturer: str,
     config: PnPExportConfig | None = None,
     rotation_corrections: dict[str, float] | None = None,
+    placement_corrections: PlacementCorrections | None = None,
 ) -> PnPFormatter:
     """
     Get pick-and-place formatter for a manufacturer.
@@ -341,6 +362,8 @@ def get_pnp_formatter(
         config: Export configuration
         rotation_corrections: Per-footprint rotation corrections (pattern -> degrees).
             When provided, these are applied during ``apply_transforms()``.
+        placement_corrections: Footprint-glob and LCSC-keyed rotation + XY
+            corrections.  When non-empty, supersedes ``rotation_corrections``.
 
     Returns:
         PnPFormatter for the specified manufacturer
@@ -356,7 +379,7 @@ def get_pnp_formatter(
             context={"manufacturer": manufacturer, "available": available},
             suggestions=[f"Use one of: {', '.join(available)}"],
         )
-    return formatter_class(config, rotation_corrections)
+    return formatter_class(config, rotation_corrections, placement_corrections)
 
 
 def is_through_hole_footprint(footprint: Footprint) -> bool:
@@ -376,6 +399,19 @@ def is_through_hole_footprint(footprint: Footprint) -> bool:
         and pad.number not in smd_numbers
         for pad in pads
     )
+
+
+def _lcsc_from_properties(properties: dict[str, str] | None) -> str:
+    """Return the LCSC part number from footprint properties, or ``""``.
+
+    Accepts the same property names as the BOM extractor.
+    """
+    from ..schema.bom import LCSC_PROPERTY_NAMES
+
+    for name, value in (properties or {}).items():
+        if name.lower() in LCSC_PROPERTY_NAMES and value:
+            return str(value).strip()
+    return ""
 
 
 def extract_placements(
@@ -417,6 +453,7 @@ def extract_placements(
                 y=y,
                 rotation=fp.rotation,
                 layer=fp.layer,
+                lcsc=_lcsc_from_properties(getattr(fp, "properties", None)),
             )
         )
 
@@ -544,6 +581,7 @@ def export_pnp(
     config: PnPExportConfig | None = None,
     pcb_path: str | Path | None = None,
     rotation_corrections: dict[str, float] | None = None,
+    placement_corrections: PlacementCorrections | None = None,
 ) -> str:
     """
     Export pick-and-place file.
@@ -560,6 +598,9 @@ def export_pnp(
         rotation_corrections: Per-footprint rotation corrections
             (pattern -> degrees).  When provided, these are applied
             during formatting via ``PnPFormatter.apply_transforms()``.
+        placement_corrections: Footprint-glob and LCSC-keyed rotation + XY
+            corrections (e.g. ``profile.placement_corrections``).  When
+            non-empty, supersedes ``rotation_corrections``.
 
     Returns:
         Formatted CPL as CSV string
@@ -569,7 +610,7 @@ def export_pnp(
     # apply regardless of which branch below runs.  The formatter is the
     # single source of truth for the effective config; synthesizing a
     # config here would silently drop those defaults (issue #3618).
-    formatter = get_pnp_formatter(manufacturer, config, rotation_corrections)
+    formatter = get_pnp_formatter(manufacturer, config, rotation_corrections, placement_corrections)
     config = formatter.config
 
     # Auto-apply auxiliary origin offset when a PCB path is provided
@@ -583,7 +624,9 @@ def export_pnp(
                 x_offset=config.x_offset - aux_x,
                 y_offset=config.y_offset - aux_y,
             )
-            formatter = get_pnp_formatter(manufacturer, config, rotation_corrections)
+            formatter = get_pnp_formatter(
+                manufacturer, config, rotation_corrections, placement_corrections
+            )
 
     placements = extract_placements(footprints, formatter.config)
     return formatter.format(placements)

@@ -66,8 +66,21 @@ class FileNamingConvention:
     gerber_zip_name: str = "gerbers.zip"
 
 
+def _correction_rotation(value: Any) -> float:
+    """Rotation of a ``rotation_corrections`` entry (scalar or mapping form)."""
+    if isinstance(value, dict):
+        return float(value.get("rotation", 0.0))
+    return float(value)
+
+
 def load_rotation_corrections(manufacturer_id: str) -> dict[str, float]:
     """Load rotation corrections from a YAML data file.
+
+    Entries may be written either as a bare number (legacy form) or as a
+    mapping that also carries ``offset_x_mm`` / ``offset_y_mm`` (see
+    :class:`PlacementCorrection`).  This function returns the rotation
+    part only; use :func:`load_placement_corrections` for the offsets and
+    the LCSC-keyed ``lcsc_corrections`` section.
 
     Args:
         manufacturer_id: Manufacturer identifier (e.g., "jlcpcb")
@@ -81,7 +94,25 @@ def load_rotation_corrections(manufacturer_id: str) -> dict[str, float]:
         return {}
 
     data = _load_yaml(yaml_path)
-    return data.get("rotation_corrections", {})
+    raw = data.get("rotation_corrections") or {}
+    return {pattern: _correction_rotation(value) for pattern, value in raw.items()}
+
+
+def _match_footprint_glob(footprint: str, patterns: dict[str, Any]) -> str | None:
+    """Return the first glob in *patterns* matching *footprint*, or ``None``.
+
+    The full identifier is tried first so library-specific overrides keep
+    precedence; then the package name after the ``Library:`` separator.
+    """
+    for pattern in patterns:
+        if fnmatch.fnmatch(footprint, pattern):
+            return pattern
+    if ":" in footprint:
+        package = footprint.split(":", 1)[1]
+        for pattern in patterns:
+            if fnmatch.fnmatch(package, pattern):
+                return pattern
+    return None
 
 
 def match_rotation_correction(
@@ -103,15 +134,125 @@ def match_rotation_correction(
     Returns:
         Rotation correction in degrees, or ``0.0`` if no match.
     """
-    for pattern, offset in corrections.items():
-        if fnmatch.fnmatch(footprint, pattern):
-            return float(offset)
-    if ":" in footprint:
-        package = footprint.split(":", 1)[1]
-        for pattern, offset in corrections.items():
-            if fnmatch.fnmatch(package, pattern):
-                return float(offset)
-    return 0.0
+    pattern = _match_footprint_glob(footprint, corrections)
+    return 0.0 if pattern is None else float(corrections[pattern])
+
+
+@dataclass(frozen=True)
+class PlacementCorrection:
+    """Per-footprint or per-part CPL correction.
+
+    Attributes:
+        rotation: Degrees added to the KiCad rotation (CCW-positive, the
+            same sign convention as ``rotation_corrections``).  ``None``
+            means "not specified": an LCSC entry then inherits the rotation
+            of the matching footprint glob.
+        offset_x_mm: X offset in the **footprint-local** frame.
+        offset_y_mm: Y offset in the **footprint-local** frame.
+
+    The offset uses the frame of the library footprint as drawn in KiCad's
+    footprint editor (the frame pad ``(at ...)`` coordinates use): +X right,
+    **+Y down**, origin at the footprint anchor, top-side view.  It is the
+    vector from KiCad's footprint origin to the assembler's part origin, so
+    the exported CPL position is ``position + R(rotation) * offset``, using
+    the same local->board rotation as pads
+    (:func:`kicad_tools.core.geometry.rotate_pad_offset`).  On ``B.Cu`` the
+    local Y component is negated first, exactly as KiCad mirrors pad
+    coordinates when it flips a footprint, so one entry describes the part
+    on both sides.
+    """
+
+    rotation: float | None = None
+    offset_x_mm: float = 0.0
+    offset_y_mm: float = 0.0
+
+    @classmethod
+    def from_yaml(cls, value: Any, default_rotation: float | None) -> PlacementCorrection:
+        """Build from a YAML entry: a bare number (rotation) or a mapping."""
+        if isinstance(value, dict):
+            unknown = set(value) - {"rotation", "offset_x_mm", "offset_y_mm"}
+            if unknown:
+                raise ValueError(f"Unknown placement correction key(s): {sorted(unknown)}")
+            rotation = value.get("rotation", default_rotation)
+            return cls(
+                rotation=None if rotation is None else float(rotation),
+                offset_x_mm=float(value.get("offset_x_mm", 0.0)),
+                offset_y_mm=float(value.get("offset_y_mm", 0.0)),
+            )
+        return cls(rotation=float(value))
+
+
+@dataclass
+class PlacementCorrections:
+    """Footprint-glob and LCSC-keyed CPL corrections for one manufacturer.
+
+    Resolution for a placement (see :meth:`resolve`):
+
+    1. An ``lcsc`` entry whose key equals the part's LCSC number (case-
+       insensitive) supplies the offset, and the rotation when it sets one.
+    2. Otherwise (or for an LCSC entry without ``rotation``) the first
+       matching ``footprint`` glob supplies rotation (and offset, when no
+       LCSC entry matched).
+    """
+
+    footprint: dict[str, PlacementCorrection] = field(default_factory=dict)
+    lcsc: dict[str, PlacementCorrection] = field(default_factory=dict)
+
+    @classmethod
+    def from_rotations(cls, rotations: dict[str, float] | None) -> PlacementCorrections:
+        """Wrap a legacy ``pattern -> degrees`` dict."""
+        return cls(
+            footprint={
+                pattern: PlacementCorrection(rotation=float(deg))
+                for pattern, deg in (rotations or {}).items()
+            }
+        )
+
+    def __bool__(self) -> bool:
+        return bool(self.footprint or self.lcsc)
+
+    def resolve(self, footprint: str, lcsc: str = "") -> tuple[float, float, float]:
+        """Return ``(rotation_deg, offset_x_mm, offset_y_mm)`` for a part.
+
+        Offsets are footprint-local (see :class:`PlacementCorrection`).
+        Unmatched parts resolve to ``(0.0, 0.0, 0.0)``.
+        """
+        pattern = _match_footprint_glob(footprint, self.footprint)
+        fp_entry = self.footprint[pattern] if pattern is not None else PlacementCorrection()
+        part_entry = self.lcsc.get(lcsc.strip().upper()) if lcsc else None
+
+        if part_entry is None:
+            return (fp_entry.rotation or 0.0, fp_entry.offset_x_mm, fp_entry.offset_y_mm)
+        rotation = part_entry.rotation
+        if rotation is None:
+            rotation = fp_entry.rotation or 0.0
+        return (rotation, part_entry.offset_x_mm, part_entry.offset_y_mm)
+
+
+def load_placement_corrections(manufacturer_id: str) -> PlacementCorrections:
+    """Load footprint-glob and LCSC-keyed CPL corrections from YAML.
+
+    Reads ``<manufacturer_id>_rotations.yaml``: the ``rotation_corrections``
+    section (footprint globs; bare-number or mapping entries) and the
+    optional ``lcsc_corrections`` section (LCSC part number -> mapping).
+
+    Returns:
+        :class:`PlacementCorrections`; empty if no data file exists.
+    """
+    yaml_path = _DATA_DIR / f"{manufacturer_id}_rotations.yaml"
+    if not yaml_path.exists():
+        return PlacementCorrections()
+
+    data = _load_yaml(yaml_path)
+    footprint = {
+        pattern: PlacementCorrection.from_yaml(value, default_rotation=0.0)
+        for pattern, value in (data.get("rotation_corrections") or {}).items()
+    }
+    lcsc = {
+        str(part).strip().upper(): PlacementCorrection.from_yaml(value, default_rotation=None)
+        for part, value in (data.get("lcsc_corrections") or {}).items()
+    }
+    return PlacementCorrections(footprint=footprint, lcsc=lcsc)
 
 
 @dataclass
@@ -360,6 +501,10 @@ class ManufacturerProfile:
 
     # Export settings: rotation corrections per footprint pattern
     rotation_corrections: dict[str, float] = field(default_factory=dict)
+
+    # Export settings: footprint-glob and LCSC-keyed rotation + XY corrections.
+    # When populated this supersedes ``rotation_corrections`` in CPL export.
+    placement_corrections: PlacementCorrections = field(default_factory=PlacementCorrections)
 
     # Export format IDs (keys into BOM_FORMATTERS / PNP_FORMATTERS registries)
     pnp_format_id: str | None = None

@@ -22,7 +22,12 @@ from .base import (
     ManufacturerProfile,
     load_design_rules_from_yaml,
 )
-from .jlcpcb import _ROTATION_CORRECTIONS, JLCPCB_ASSEMBLY, LCSC_LIBRARY
+from .jlcpcb import (
+    _PLACEMENT_CORRECTIONS,
+    _ROTATION_CORRECTIONS,
+    JLCPCB_ASSEMBLY,
+    LCSC_LIBRARY,
+)
 
 # Load design rules from YAML configuration
 _DESIGN_RULES = load_design_rules_from_yaml("jlcpcb_tier1")
@@ -46,6 +51,7 @@ JLCPCB_TIER1_PROFILE = ManufacturerProfile(
     supported_layers=[1, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20],
     pricing_model="per_pcb",
     rotation_corrections=_ROTATION_CORRECTIONS,
+    placement_corrections=_PLACEMENT_CORRECTIONS,
     pnp_format_id="jlcpcb",
     gerber_preset_id="jlcpcb",
 )

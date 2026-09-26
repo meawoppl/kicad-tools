@@ -12,6 +12,9 @@ from pathlib import Path
 from .hierarchy import build_hierarchy
 from .schematic import Schematic
 
+# Symbol/footprint property names (lower-cased) that carry an LCSC part number.
+LCSC_PROPERTY_NAMES: tuple[str, ...] = ("lcsc", "lcsc_pn", "lcsc part", "jlc", "jlcpcb")
+
 
 @dataclass
 class BOMItem:
@@ -261,7 +264,7 @@ def extract_bom_from_schematic(schematic: Schematic) -> list[BOMItem]:
                 item.manufacturer = value
             elif name.lower() in ("mpn", "mfr_pn", "manufacturer_pn", "pn"):
                 item.mpn = value
-            elif name.lower() in ("lcsc", "lcsc_pn", "lcsc part", "jlc", "jlcpcb"):
+            elif name.lower() in LCSC_PROPERTY_NAMES:
                 item.lcsc = value
             else:
                 item.properties[name] = value
@@ -376,7 +379,7 @@ def extract_bom_from_pcb(pcb_path: str) -> BOM:
                 manufacturer = value
             elif name_lower in ("mpn", "mfr_pn", "manufacturer_pn", "pn"):
                 mpn = value
-            elif name_lower in ("lcsc", "lcsc_pn", "lcsc part", "jlc", "jlcpcb"):
+            elif name_lower in LCSC_PROPERTY_NAMES:
                 lcsc = value
             else:
                 extra_props[name] = value

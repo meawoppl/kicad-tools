@@ -7,6 +7,26 @@
 # Patterns use fnmatch-style glob matching:
 #   SOT-23*  matches  SOT-23, SOT-23-3, SOT-23-5, SOT-23-6, etc.
 #
+# Sign convention: degrees added to KiCad's rotation, CCW-positive, so a
+# 90-degree *clockwise* correction is written 270.0 (== -90).
+#
+# Entry forms (both sections):
+#   "Pattern*": 180.0                       # rotation only (legacy form)
+#   "Pattern*": {rotation: 180.0, offset_x_mm: 0.0, offset_y_mm: -1.2}
+#
+# Offsets are in the FOOTPRINT-LOCAL frame, i.e. the library footprint as
+# drawn in KiCad's footprint editor (same axes as pad (at ...) coordinates):
+# +X right, +Y DOWN, top-side view.  The offset is the vector from KiCad's
+# footprint origin to the assembler's part origin.  At export it is rotated
+# by the part's placement angle exactly like a pad offset, with local Y
+# negated for B.Cu parts (KiCad mirrors pad Y when flipping), and added to
+# Mid X / Mid Y.  One entry therefore stays correct at any rotation/side.
+#
+# ``lcsc_corrections`` keys are LCSC part numbers, read from the footprint's
+# LCSC property (same property names as the BOM: LCSC, LCSC_PN, JLC, ...).
+# An LCSC entry takes precedence over the footprint globs; if it omits
+# ``rotation`` the matching glob's rotation is inherited.
+#
 # Sources:
 #   - KiBot rotation correction database
 #   - JLCPCB SMT assembly documentation
@@ -91,3 +111,47 @@ rotation_corrections:
   # --- USB / connector packages ---
   "USB_C_Receptacle*": 0.0
   "USB_Micro-B*": 0.0
+
+# Per-part corrections keyed by LCSC part number.
+#
+# The entries below were verified against JLCPCB's assembly preview on a
+# real order (2026-09-26, all top side).  They are keyed by LCSC number
+# rather than changed globally because the KiCad footprint used and the
+# EasyEDA model origin are both part-specific.
+lcsc_corrections:
+  # SN74LVC541APWR, TSSOP-20: preview needed a 90-degree clockwise turn vs
+  # native KiCad rotation.  Agrees with the "TSSOP-20*" glob (270); pinned
+  # here so this verified part does not depend on the package-wide rule.
+  C113281:
+    rotation: 270.0
+
+  # AP2112K-3.3TRG1, SOT-23-5: preview needed 90 degrees clockwise (pin 1
+  # onto KiCad pad 1).  NOTE: conflicts with the "SOT-23*" glob (180), which
+  # is left unchanged for other SOT-23-5 parts.
+  C51118:
+    rotation: 270.0
+
+  # USBLC6-2SC6, SOT-23-6: 90 degrees clockwise, as for C51118.  Also
+  # conflicts with the "SOT-23*" glob (180).
+  C7519:
+    rotation: 270.0
+
+  # JS102011SAQN slide switch.  The EasyEDA origin lies on the terminal row
+  # (y=2989.173 in EasyEDA units) while KiCad's origin is the body centre
+  # on the locating-hole line (y=3000): 10.827 * 0.254 mm = 2.75 mm.  In
+  # the preview (placed at KiCad rotation 0) the model sat 2.75 mm low;
+  # shifting it up on the board (CPL +Y in JLCPCB's Y-up terms) aligned both
+  # pegs and all three terminals.  "Up" is -Y in the footprint-local frame.
+  C221660:
+    rotation: 0.0
+    offset_y_mm: -2.75
+
+  # TYPE-C-31-M-12 USB-C receptacle.  EasyEDA origin y=2997.4175 vs shield
+  # rows y=2990.702 / 3007.158 (0.254 mm/unit); KiCad shield rows at local
+  # y=-3.13 / +1.05.  Measuring from either row puts the EasyEDA origin at
+  # local y ~= -1.425 mm (-3.13 + 6.7155*0.254; 1.05 - 9.7405*0.254).  Verified in the preview at KiCad rotation 180, where
+  # this local -Y offset moves the part 1.425 mm down on the board (CPL
+  # -1.425 mm in JLCPCB's Y-up terms), matching the observed correction.
+  C165948:
+    rotation: 0.0
+    offset_y_mm: -1.425

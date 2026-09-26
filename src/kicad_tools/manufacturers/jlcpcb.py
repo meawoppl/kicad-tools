@@ -11,6 +11,7 @@ from .base import (
     ManufacturerProfile,
     PartsLibrary,
     load_design_rules_from_yaml,
+    load_placement_corrections,
     load_rotation_corrections,
 )
 
@@ -19,6 +20,7 @@ _DESIGN_RULES = load_design_rules_from_yaml("jlcpcb")
 
 # Load rotation corrections for JLCPCB pick-and-place files
 _ROTATION_CORRECTIONS = load_rotation_corrections("jlcpcb")
+_PLACEMENT_CORRECTIONS = load_placement_corrections("jlcpcb")
 
 # JLCPCB Assembly Capabilities
 JLCPCB_ASSEMBLY = AssemblyCapabilities(
@@ -125,6 +127,7 @@ JLCPCB_PROFILE = ManufacturerProfile(
     supported_layers=[1, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20],
     pricing_model="per_pcb",
     rotation_corrections=_ROTATION_CORRECTIONS,
+    placement_corrections=_PLACEMENT_CORRECTIONS,
     pnp_format_id="jlcpcb",
     gerber_preset_id="jlcpcb",
 )

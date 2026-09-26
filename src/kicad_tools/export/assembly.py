@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from kicad_tools.exceptions import FileNotFoundError as KiCadFileNotFoundError
 
@@ -34,6 +35,9 @@ from .pnp import (
     extract_tht_exclusions,
     get_pnp_formatter,
 )
+
+if TYPE_CHECKING:
+    from ..manufacturers.base import PlacementCorrections
 
 logger = logging.getLogger(__name__)
 
@@ -524,8 +528,9 @@ class AssemblyPackage:
         if self.config.exclude_references:
             footprints = [fp for fp in footprints if not self._is_excluded(fp.reference)]
 
-        # Resolve per-footprint rotation corrections from manufacturer profile
+        # Resolve per-footprint / per-part corrections from manufacturer profile
         rotation_corrections = self._get_rotation_corrections()
+        placement_corrections = self._get_placement_corrections()
 
         # Generate CPL – pass None when no explicit config so that the
         # formatter can apply its own defaults (e.g. JLCPCB exclude_tht=True).
@@ -534,6 +539,7 @@ class AssemblyPackage:
             self.fab_family,
             self.config.pnp_config,
             rotation_corrections=rotation_corrections,
+            placement_corrections=placement_corrections,
         )
 
         # Record the THT hand-solder set excluded from the CPL.  Use the
@@ -572,6 +578,22 @@ class AssemblyPackage:
             profile = get_profile(self.manufacturer)
             if profile.rotation_corrections:
                 return profile.rotation_corrections
+        except (ValueError, ImportError):
+            pass
+        return None
+
+    def _get_placement_corrections(self) -> PlacementCorrections | None:
+        """Resolve footprint-glob + LCSC CPL corrections from the profile.
+
+        Returns ``None`` when the profile has none, in which case the
+        rotation-only corrections are used.
+        """
+        try:
+            from ..manufacturers import get_profile
+
+            profile = get_profile(self.manufacturer)
+            if profile.placement_corrections:
+                return profile.placement_corrections
         except (ValueError, ImportError):
             pass
         return None

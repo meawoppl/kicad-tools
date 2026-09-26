@@ -463,21 +463,46 @@ Add LCSC numbers to your schematic symbols:
 
 Find LCSC part numbers at: https://www.lcsc.com
 
-### "CPL rotation is wrong"
+### "CPL rotation or position is wrong"
 
-JLCPCB may expect different rotation for some packages. You can add rotation corrections:
+Assemblers such as JLCPCB orient and anchor their part models differently
+from KiCad for many packages; check the assembly preview before ordering.
+Corrections live in `src/kicad_tools/manufacturers/data/jlcpcb_rotations.yaml`
+and are applied automatically by the assembly package (`kct export`). Entries
+are keyed by footprint glob (`rotation_corrections`) or by LCSC part number
+(`lcsc_corrections`, read from the footprint's `LCSC` / `LCSC_PN` / `JLC`
+property); an LCSC entry wins over a glob, and inherits the glob's rotation
+if it does not set its own.
+
+```yaml
+rotation_corrections:
+  "SOT-23*": 180.0                      # rotation only
+  "SW_Custom*": {rotation: 90.0, offset_y_mm: -0.5}
+lcsc_corrections:
+  C221660: {rotation: 0.0, offset_y_mm: -2.75}
+```
+
+- `rotation` is added to KiCad's rotation, CCW-positive: a 90° clockwise
+  fix is `270.0`.
+- `offset_x_mm` / `offset_y_mm` are in the **footprint-local** frame as drawn
+  in KiCad's footprint editor (+X right, **+Y down**): the vector from KiCad's
+  footprint origin to the assembler's part origin. It is rotated with the
+  part's placement angle like a pad offset, and its Y is negated for `B.Cu`
+  parts (as KiCad mirrors pad Y on flip), so one entry holds at every
+  rotation and on both sides.
+
+From Python:
 
 ```python
-from kicad_tools.export import export_pnp, PnPExportConfig
+from kicad_tools.export import export_pnp
+from kicad_tools.manufacturers import PlacementCorrection, PlacementCorrections, get_profile
 
-config = PnPExportConfig(
-    rotation_offsets={
-        "SOT-23": 180,  # Rotate SOT-23 by 180°
-        "TQFP-32": 90,  # Rotate TQFP-32 by 90°
-    }
+base = get_profile("jlcpcb").placement_corrections
+corrections = PlacementCorrections(
+    footprint=dict(base.footprint),
+    lcsc={**base.lcsc, "C999999": PlacementCorrection(offset_x_mm=0.3)},
 )
-
-export_pnp(pcb, "cpl.csv", manufacturer="jlcpcb", config=config)
+csv_text = export_pnp(pcb.footprints, "jlcpcb", placement_corrections=corrections)
 ```
 
 ## Next Steps
