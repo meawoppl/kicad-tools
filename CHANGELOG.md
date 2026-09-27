@@ -65,6 +65,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   advisory, so plain exit codes don't change. All committed fleet boards
   produce zero findings.
 
+- **Pin-1 / polarity silkscreen-marker rule in `kct check`**: a new
+  default-on `pin1_marker` category (selectable via `--only`/`--skip`, no new
+  flags) with two warning-severity rules. `pin1_marker_missing` fires when an
+  orientation-sensitive footprint has no silkscreen element within 2.5 mm of
+  pad 1 that points at it (closer to pad 1 than to any other pad). Covered
+  footprints are those with 3+ copper pads including `1`/`A1`, plus
+  `Diode_*` / `LED_*` / `CP_*` / tantalum parts. `pin1_marker_obscured` fires
+  when the only such marks are under the Fab package-body outline or on pad
+  copper. Every other gate passes a board with no visible pin-1 marks, yet
+  the parts can then be assembled or reworked backwards. Passives, test
+  points, mounting holes, switches and keyed USB-C / coax connectors are
+  excluded. `Pin1MarkerRule` exposes the selection patterns, `min_pads`,
+  include/exclude references, `search_radius_mm`, `require_asymmetry`,
+  `include_board_silk` and `severity`. Findings are waivable per reference
+  via `.kct_waivers.json`, and both rule ids are classified advisory, so
+  plain exit codes don't change. Marker *generation* is out of scope; it
+  remains a listed follow-up of `kicad_tools.silkscreen.generator`.
+
 - **Native emission of the different-net SMD-pad clearance floor**
   (Issue #5059). The `SMD Pad Clearance` rule is now emitted into the
   generated `.kicad_dru` (and the shipped JLCPCB templates) whenever a
