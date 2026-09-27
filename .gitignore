@@ -87,6 +87,7 @@ boards/*/*/output/*.kct.json
 .loom-in-use
 .loom-checkpoint
 .loom-managed
+.loom-cargo-target-dir
 .no-changes-needed
 .snapshots/
 .loom/.daemon.pid
