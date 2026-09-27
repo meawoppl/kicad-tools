@@ -50,6 +50,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Via-under-package-body rule in `kct check`**: a new default-on
+  `via_under_body` category (selectable via `--only`/`--skip`, no new flags)
+  with a warning-severity `via_under_body` rule. It flags vias whose copper
+  overlaps the body outline of a bottom-terminated package (QFN / DFN / SON /
+  LGA by default). The outline is the footprint's `F.Fab`/`B.Fab` outline,
+  falling back to the courtyard. Clearance and via-in-pad both pass these vias
+  because they miss every pad, yet they can't be probed or inspected once the
+  part is assembled. Thermal vias inside the footprint's own exposed pad on
+  its net are allowed by default. `ViaUnderBodyRule` exposes
+  `footprint_pattern`, `include_references` / `exclude_references`,
+  `allow_thermal_pad_vias`, `fallback_to_courtyard` and `severity`. Findings
+  are waivable via `.kct_waivers.json`, and the rule id is classified
+  advisory, so plain exit codes don't change. All committed fleet boards
+  produce zero findings.
+
 - **Native emission of the different-net SMD-pad clearance floor**
   (Issue #5059). The `SMD Pad Clearance` rule is now emitted into the
   generated `.kicad_dru` (and the shipped JLCPCB templates) whenever a

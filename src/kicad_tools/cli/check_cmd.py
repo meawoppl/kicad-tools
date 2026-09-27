@@ -1215,6 +1215,7 @@ CHECK_CATEGORIES = [
     "solder_mask",
     "mask_to_copper",
     "via_in_pad",
+    "via_under_body",
     "zero_length_segment",
     "zones",
 ]
@@ -2790,6 +2791,7 @@ def run_selected_checks(
         "solder_mask": checker.check_solder_mask_pads,
         "mask_to_copper": checker.check_mask_to_copper,
         "via_in_pad": checker.check_via_in_pad,
+        "via_under_body": checker.check_via_under_body,
         "zero_length_segment": checker.check_zero_length_segments,
         "zones": checker.check_zones,
     }
