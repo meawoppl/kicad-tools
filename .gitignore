@@ -115,6 +115,7 @@ boards/*/*/output/*.kct.json
 .loom/sweep-checkpoint/
 .loom/sweep-run/
 .loom/state/ci-telemetry/
+.loom/state/fleet-captain/
 .loom/concierge/
 .loom/stats/
 .loom/diagnostics/
@@ -127,6 +128,8 @@ boards/*/*/output/*.kct.json
 .loom/claude-config/
 .loom/native-tools/
 .loom/tokens/
+.loom/tokens.*/
+.loom/tokens-*/
 .loom/accounts.env
 .loom/api-keys/
 .loom/account-health.json
