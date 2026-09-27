@@ -50,6 +50,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Trace width-consistency audit (`width_consistency`).** A new
+  heuristic, geometric (not ampacity) advisory rule. It walks each
+  net/layer's tracks as chains between pads, vias and branches and reports
+  `width_island` (a short constant-width run with narrower copper on both
+  sides) and `width_transition` (a neck-down on a two-terminal chain that
+  no other-net clearance or pad escape explains, reported with the nearest
+  obstacle and the gap before and after widening). Warning severity,
+  advisory-quality category, waivable. Opt-in via
+  `kct check --only width_consistency` or
+  `DRCChecker.check_width_consistency()`, so it does not change existing
+  verdicts. It can be configured through `WidthConsistencyRule`
+  (`max_island_length_mm`, `clearance_mm`, `report_justified`, `severity`,
+  ...).
+
 - **Native emission of the different-net SMD-pad clearance floor**
   (Issue #5059). The `SMD Pad Clearance` rule is now emitted into the
   generated `.kicad_dru` (and the shipped JLCPCB templates) whenever a
