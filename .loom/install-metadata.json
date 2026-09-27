@@ -1,6 +1,6 @@
 {
-  "loom_version": "0.19.459",
-  "loom_commit": "0bebb116",
+  "loom_version": "0.19.460",
+  "loom_commit": "913a82b58",
   "install_date": "2026-08-10",
   "installed_files": [
     ".claude/agents/loom-architect.md",
