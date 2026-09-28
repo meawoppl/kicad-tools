@@ -433,6 +433,60 @@ else:
         print(f"  - {violation}")
 ```
 
+## Advisory: Trace Width Consistency (`width_consistency`)
+
+A board can pass DRC and still be full of width steps that nobody chose,
+such as a short 0.4 mm stub in the middle of a 0.2 mm track, or a power
+trace necked down to signal width where nothing nearby requires it. The
+`width_consistency` category is a geometric heuristic for triaging these.
+It does not check ampacity or impedance; use `ampacity` / `impedance` for
+electrical intent.
+
+```bash
+kct check board.kicad_pcb --only width_consistency --format json
+```
+
+On each copper layer and net, tracks are split into **chains** between
+pads, vias and branch points, and each chain is split into constant-width
+**runs**. The check reports two things:
+
+- **`width_island`** (warning): a run inside a chain that has narrower
+  copper on both sides and is shorter than `max_island_length_mm`
+  (default 3 mm).
+- **`width_transition`** (warning): a width change on a two-terminal
+  (pad/via to pad/via, no branches) chain where the neck-down is **not
+  justified**. A neck-down is justified if widening the whole narrow run
+  to the wide width would come within the clearance of other-net
+  tracks/pads/vias on the same layer, or if the narrow run enters a pad
+  narrower than the wide width. The message gives the nearest other-net
+  obstacle and the gap before and after widening.
+
+Foreign-net zone fills never justify a neck-down, because a pour re-flows
+around a widened track on refill. Board edges, keepouts and T-junctions
+that land in the middle of a track are not modelled.
+
+The check is **opt-in**. A plain `kct check` and `DRCChecker.check_all()`
+don't run it, so enabling it never changes an existing board's verdict.
+Request it with `--only width_consistency` (it can be combined with other
+categories), call `DRCChecker.check_width_consistency()`, or set
+`checker.width_consistency_options = {}` (or a dict of rule options) to
+include it in `check_all()`. Findings are
+in the advisory-quality bucket, so they only fail the run under
+`--strict`, and they can be waived per net or per track UUID in
+`.kct_waivers.json`. To tune the check, construct the rule directly:
+
+```python
+from kicad_tools.validate.rules import WidthConsistencyRule
+
+rule = WidthConsistencyRule(
+    max_island_length_mm=2.0,
+    clearance_mm=0.15,  # default: design_rules.min_clearance_mm
+    report_justified=True,  # also emit justified neck-downs as info
+    severity="warning",
+)
+results = rule.check(pcb, design_rules)
+```
+
 ## Common DRC Issues and Fixes
 
 ### Trace Width Too Small

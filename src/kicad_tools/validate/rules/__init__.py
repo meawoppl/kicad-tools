@@ -34,6 +34,7 @@ if TYPE_CHECKING:
     from .solder_mask import SolderMaskPadRules
     from .via_in_pad import ViaInPadRule
     from .via_under_body import ViaUnderBodyRule
+    from .width_consistency import WidthConsistencyRule
     from .zone_fill import IsolatedCopperRule, ZoneFillRule
 
 # Resolve only the requested public export. DRCChecker still imports and runs
@@ -65,6 +66,7 @@ _EXPORT_MODULES: dict[str, str] = {
     "SolderMaskPadRules": ".solder_mask",
     "ViaInPadRule": ".via_in_pad",
     "ViaUnderBodyRule": ".via_under_body",
+    "WidthConsistencyRule": ".width_consistency",
     "IsolatedCopperRule": ".zone_fill",
     "ZoneFillRule": ".zone_fill",
 }
@@ -90,6 +92,7 @@ __all__ = [
     "SolderMaskPadRules",
     "ViaInPadRule",
     "ViaUnderBodyRule",
+    "WidthConsistencyRule",
     "check_all_silkscreen",
     "check_schematic_fields",
     "check_silk_edge_clearance",
