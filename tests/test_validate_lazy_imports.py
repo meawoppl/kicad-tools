@@ -112,6 +112,7 @@ PUBLIC_EXPORTS = {
         "SinglePadNetRule": ".single_pad_net",
         "SolderMaskPadRules": ".solder_mask",
         "ViaInPadRule": ".via_in_pad",
+        "WidthConsistencyRule": ".width_consistency",
         "IsolatedCopperRule": ".zone_fill",
         "ZoneFillRule": ".zone_fill",
     },
@@ -153,7 +154,10 @@ def test_lazy_checker_executes_every_enabled_rule_with_real_results():
                 return result
             setattr(checker, name, record)
         result = checker.check_all()
-        expected = [n for n in checker.CHECK_ALL_METHODS if n != 'check_mask_to_copper']
+        expected = [
+            n for n in checker.CHECK_ALL_METHODS
+            if n not in ('check_mask_to_copper', 'check_width_consistency')
+        ]
         assert [n for n, _ in calls] == expected
         assert result.rules_checked == sum(r.rules_checked for _, r in calls)
         assert result.rules_checked > 0
