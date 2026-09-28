@@ -19,7 +19,12 @@ element that qualifies as a pin-1 indicator:
    pad (``require_asymmetry``, default on).  A body outline that runs past
    pad 1 and pad 2 alike does not identify either, so it is not counted --
    this is what makes a bare two-line LED/diode outline fail while the
-   cathode bar next to it passes.
+   cathode bar next to it passes.  Tie-break for multi-segment marks such
+   as the L-shaped corner on KiCad's stock crystal footprints, whose legs
+   each tie between pad 1 and a neighbour: touching silk is grouped into
+   connected components, and a *bent* component (L, U, box; never a single
+   straight stroke) also counts when its centroid is strictly closer to
+   pad 1 than to any other pad.
 4. Some of it is actually visible: the part left after removing the package
    body outline (Fab, courtyard fallback, via
    :func:`kicad_tools.geometry.package_body.package_body_polygon`) and the
@@ -352,8 +357,11 @@ class Pin1MarkerRule(DRCRule):
         all_pads = unary_union(pin1_geoms + other_geoms)
         body, _source = package_body_polygon(footprint)
 
+        own_silk = list(self._silk_geometries(footprint, []))
+        near_board_silk = [g for g in board_silk if g.distance(pin1) <= self.search_radius_mm]
+
         candidates = 0
-        for geom in self._silk_geometries(footprint, board_silk):
+        for geom in own_silk + near_board_silk:
             d1 = geom.distance(pin1)
             if d1 > self.search_radius_mm:
                 continue
@@ -364,13 +372,60 @@ class Pin1MarkerRule(DRCRule):
             ):
                 continue
             candidates += 1
-            visible = geom.difference(all_pads)
-            if body is not None:
-                visible = visible.difference(body)
-            if visible.area > _MIN_VISIBLE_AREA_MM2:
+            if self._is_visible(geom, all_pads, body):
                 return None
 
+        # Tie-break for multi-segment marks (#5737 review): KiCad's stock
+        # crystal footprints mark pin 1 with an L-shaped corner drawn as two
+        # separate ``fp_line`` legs.  Each leg is exactly as close to a
+        # neighbouring pad as to pad 1, so the per-element test above ties
+        # and rejects both.  Group touching silk into connected components
+        # and, for *bent* components only (an L, U or box -- never a single
+        # straight stroke, so a bare LED/diode outline line still fails),
+        # accept the component when its centroid is strictly closer to pad 1
+        # than to every other pad.  A closed box or a U centred on the part
+        # keeps tying and is still rejected; an L at another pad's corner
+        # points at that pad instead.
+        if self.require_asymmetry and others is not None:
+            for component in self._bent_components(own_silk + near_board_silk):
+                if component.distance(pin1) > self.search_radius_mm:
+                    continue
+                centroid = component.centroid
+                if centroid.distance(others) <= centroid.distance(pin1) + _ASYMMETRY_MARGIN_MM:
+                    continue
+                candidates += 1
+                if self._is_visible(component, all_pads, body):
+                    return None
+
         return self._make_violation(footprint, pin1, obscured=candidates > 0)
+
+    @staticmethod
+    def _is_visible(geom: Any, all_pads: Any, body: Any | None) -> bool:
+        visible = geom.difference(all_pads)
+        if body is not None:
+            visible = visible.difference(body)
+        return bool(visible.area > _MIN_VISIBLE_AREA_MM2)
+
+    @staticmethod
+    def _bent_components(geoms: list[Any]) -> Iterator[Any]:
+        """Yield connected silk components that are not a single straight stroke.
+
+        A component counts as *bent* when it fills less than half of its
+        convex hull -- true for an L, U or closed
+        outline, false for a lone (stroke-buffered) straight line, dot or
+        filled triangle (which the per-element test already handles).
+        """
+        from shapely.ops import unary_union
+
+        if len(geoms) < 2:
+            return
+        merged = unary_union(geoms)
+        parts = getattr(merged, "geoms", [merged])
+        for part in parts:
+            if part.is_empty or part.area <= 0:
+                continue
+            if part.area < 0.5 * part.convex_hull.area:
+                yield part
 
     def _silk_geometries(self, footprint: Footprint, board_silk: list[Any]) -> Iterator[Any]:
         side = footprint_side(footprint)

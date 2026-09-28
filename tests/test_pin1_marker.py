@@ -252,6 +252,109 @@ class TestAsymmetryAndVisibility:
 
 
 # ---------------------------------------------------------------------------
+# Multi-segment corner marks (stock KiCad crystal L-marker, #5737 review)
+# ---------------------------------------------------------------------------
+
+CRYSTAL_NAME = "Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm"
+
+
+def _crystal_pads() -> list[Pad]:
+    # Stock KiCad 10 Crystal_SMD_3225-4Pin_3.2x2.5mm pad layout.
+    return [
+        Pad(
+            number=n,
+            type="smd",
+            shape="roundrect",
+            position=pos,
+            size=(1.4, 1.2),
+            layers=["F.Cu"],
+        )
+        for n, pos in (
+            ("1", (-1.1, 0.85)),
+            ("2", (1.1, 0.85)),
+            ("3", (1.1, -0.85)),
+            ("4", (-1.1, -0.85)),
+        )
+    ]
+
+
+def _crystal_fab() -> FootprintGraphic:
+    return _g(
+        "poly",
+        layer="F.Fab",
+        width=0.1,
+        points=[(1.6, -1.25), (1.6, 1.25), (-0.975, 1.25), (-1.6, 0.625), (-1.6, -1.25)],
+    )
+
+
+def _crystal(graphics: list[FootprintGraphic], rotation: float = 0.0) -> Footprint:
+    return _fp(
+        name=CRYSTAL_NAME,
+        reference="Y1",
+        pads=_crystal_pads(),
+        graphics=[_crystal_fab(), *graphics],
+        rotation=rotation,
+    )
+
+
+def _stock_crystal_l() -> list[FootprintGraphic]:
+    # The stock silk: two separate fp_lines forming an L at pad 1's corner.
+    return [
+        _g("line", start=(-2.06, -1.71), end=(-2.06, 1.71)),
+        _g("line", start=(-2.06, 1.71), end=(2.06, 1.71)),
+    ]
+
+
+class TestCornerMarks:
+    @pytest.mark.parametrize("rotation", [0.0, 90.0, 180.0, 270.0])
+    def test_stock_crystal_l_marker_ok(self, rotation: float):
+        # Each leg ties between pad 1 and a neighbour (pad 4 / pad 2); the L as
+        # a whole has its centroid in pad 1's corner and must be accepted.
+        assert _run(_pcb(_crystal(_stock_crystal_l(), rotation=rotation))) == []
+
+    def test_crystal_without_silk_is_missing(self):
+        found = _run(_pcb(_crystal([])))
+        assert _ids(found) == [(PIN1_MARKER_MISSING_RULE_ID, ("Y1",))]
+
+    def test_crystal_l_at_wrong_pad_is_missing(self):
+        # Mirrored L in pad 2's corner points at pad 2, not pad 1.
+        mirrored = [
+            _g("line", start=(2.06, -1.71), end=(2.06, 1.71)),
+            _g("line", start=(2.06, 1.71), end=(-2.06, 1.71)),
+        ]
+        found = _run(_pcb(_crystal(mirrored)))
+        assert _ids(found) == [(PIN1_MARKER_MISSING_RULE_ID, ("Y1",))]
+
+    def test_crystal_single_leg_is_missing(self):
+        # One straight leg alone never gets the tie-break.
+        found = _run(_pcb(_crystal(_stock_crystal_l()[:1])))
+        assert _ids(found) == [(PIN1_MARKER_MISSING_RULE_ID, ("Y1",))]
+
+    def test_crystal_closed_box_is_missing(self):
+        box = [
+            _g("line", start=(-2.06, -1.71), end=(-2.06, 1.71)),
+            _g("line", start=(-2.06, 1.71), end=(2.06, 1.71)),
+            _g("line", start=(2.06, 1.71), end=(2.06, -1.71)),
+            _g("line", start=(2.06, -1.71), end=(-2.06, -1.71)),
+        ]
+        found = _run(_pcb(_crystal(box)))
+        assert _ids(found) == [(PIN1_MARKER_MISSING_RULE_ID, ("Y1",))]
+
+    def test_crystal_u_outline_is_missing(self):
+        # Left + top + bottom: centroid ties between pad 1 and pad 4.
+        u_shape = [
+            _g("line", start=(2.06, -1.71), end=(-2.06, -1.71)),
+            _g("line", start=(-2.06, -1.71), end=(-2.06, 1.71)),
+            _g("line", start=(-2.06, 1.71), end=(2.06, 1.71)),
+        ]
+        found = _run(_pcb(_crystal(u_shape)))
+        assert _ids(found) == [(PIN1_MARKER_MISSING_RULE_ID, ("Y1",))]
+
+    def test_crystal_l_tie_break_respects_require_asymmetry_off(self):
+        assert _run(_pcb(_crystal(_stock_crystal_l())), require_asymmetry=False) == []
+
+
+# ---------------------------------------------------------------------------
 # Transforms
 # ---------------------------------------------------------------------------
 

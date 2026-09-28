@@ -69,7 +69,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default-on `pin1_marker` category (selectable via `--only`/`--skip`, no new
   flags) with two warning-severity rules. `pin1_marker_missing` fires when an
   orientation-sensitive footprint has no silkscreen element within 2.5 mm of
-  pad 1 that points at it (closer to pad 1 than to any other pad). Covered
+  pad 1 that points at it (closer to pad 1 than to any other pad; a
+  multi-segment corner mark such as the L on KiCad's stock crystal
+  footprints counts when its centroid is closer to pad 1). Covered
   footprints are those with 3+ copper pads including `1`/`A1`, plus
   `Diode_*` / `LED_*` / `CP_*` / tantalum parts. `pin1_marker_obscured` fires
   when the only such marks are under the Fab package-body outline or on pad

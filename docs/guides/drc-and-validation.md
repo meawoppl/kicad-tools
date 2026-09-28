@@ -496,8 +496,10 @@ ICs, diodes, LEDs, polarized capacitors and connectors (any footprint with
 3+ copper pads including pad `1`/`A1`, plus `Diode_*`, `LED_*` and `CP_*`
 parts) need a silkscreen element next to pad 1 that points at it: closer to
 pad 1 than to any other pad, and at least partly outside the Fab body
-outline and pad copper. A symmetric body outline doesn't count, and neither
-does a mark drawn only on `F.Fab`. Passives, test points, mounting holes,
+outline and pad copper. Touching silk lines are also judged as one shape, so
+an L-shaped corner (as on KiCad's stock crystal footprints) counts when its
+centroid is closer to pad 1 than to any other pad. A symmetric body outline
+doesn't count, and neither does a mark drawn only on `F.Fab`. Passives, test points, mounting holes,
 switches and keyed USB-C / coax connectors are skipped.
 
 **Fix:** Add a dot, triangle or bar on `F.SilkS`/`B.SilkS` beside pad 1 and
