@@ -180,6 +180,10 @@ class DRCChecker:
             ValueError: If manufacturer ID is not recognized
         """
         self.mask_copper_request = mask_copper_request
+        # Opt-in heuristic width-consistency audit: ``None`` keeps it out of
+        # check_all(); set to a (possibly empty) dict of
+        # WidthConsistencyRule options to include it.
+        self.width_consistency_options: dict[str, object] | None = None
         self.pcb = pcb
         self.manufacturer = manufacturer
         self.layers = layers
@@ -289,6 +293,7 @@ class DRCChecker:
         "check_pad_grid_alignment",
         "check_via_in_pad",
         "check_via_under_body",
+        "check_width_consistency",
         "check_zero_length_segments",
         "check_zones",
     )
@@ -378,6 +383,13 @@ class DRCChecker:
         # prefix fallback would file it under Manufacturing.
         "via_under_body": CATEGORY_ADVISORY,
         "copper_sliver": CATEGORY_ADVISORY,
+        # Trace width-consistency audit: heuristic routing-quality triage
+        # (width islands / unexplained neck-downs), never fab-blocking.
+        # Explicit entries are REQUIRED: category_for_rule defaults unknown
+        # ids to the fab-blocking Manufacturing bucket.
+        "width_consistency": CATEGORY_ADVISORY,
+        "width_island": CATEGORY_ADVISORY,
+        "width_transition": CATEGORY_ADVISORY,
         # Dangling copper (Issue #4680): warning-severity routing-quality
         # advisories (antenna stubs / under-bonded vias), mirroring
         # KiCad's default severity -- never fab-blocking.  Explicit
@@ -587,6 +599,8 @@ class DRCChecker:
         # Run each category of checks (order matches CHECK_ALL_METHODS).
         for method_name in self.CHECK_ALL_METHODS:
             if method_name == "check_mask_to_copper" and self.mask_copper_request is None:
+                continue
+            if method_name == "check_width_consistency" and self.width_consistency_options is None:
                 continue
             method = getattr(self, method_name)
             if method_name == "check_pad_grid_alignment":
@@ -1345,6 +1359,32 @@ class DRCChecker:
             (e.g. JLCPCB Capability Plus's 4+ layer POFV process).
         """
         rule = ViaInPadRule()
+        return self._absolutize(rule.check(self.pcb, self.design_rules))
+
+    def check_width_consistency(self, **options: object) -> DRCResults:
+        """Audit trace width consistency (width islands, unexplained neck-downs).
+
+        A geometric routing-quality heuristic, not an ampacity check: it
+        reports short constant-width runs bounded by narrower copper
+        (``width_island``) and width changes on two-terminal routes that
+        no nearby other-net clearance explains (``width_transition``).
+        Warning severity by default.  Opt-in, like ``check_mask_to_copper``:
+        :meth:`check_all` skips it unless :attr:`width_consistency_options`
+        is set, and ``kct check`` skips it unless requested with ``--only
+        width_consistency``, so this heuristic does not change the verdict
+        of existing boards or of gates that count warnings.  Explicit
+        ``options`` override :attr:`width_consistency_options`.  See
+        :class:`~kicad_tools.validate.rules.width_consistency.WidthConsistencyRule`
+        for the model and the keyword ``options`` it accepts.
+
+        Returns:
+            DRCResults containing ``width_island`` / ``width_transition``
+            findings.
+        """
+        from .rules.width_consistency import WidthConsistencyRule
+
+        merged = {**(self.width_consistency_options or {}), **options}
+        rule = WidthConsistencyRule(**merged)  # type: ignore[arg-type]
         return self._absolutize(rule.check(self.pcb, self.design_rules))
 
     def check_via_under_body(self) -> DRCResults:

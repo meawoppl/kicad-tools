@@ -1217,6 +1217,7 @@ CHECK_CATEGORIES = [
     "mask_to_copper",
     "via_in_pad",
     "via_under_body",
+    "width_consistency",
     "zero_length_segment",
     "zones",
 ]
@@ -2794,6 +2795,7 @@ def run_selected_checks(
         "mask_to_copper": checker.check_mask_to_copper,
         "via_in_pad": checker.check_via_in_pad,
         "via_under_body": checker.check_via_under_body,
+        "width_consistency": checker.check_width_consistency,
         "zero_length_segment": checker.check_zero_length_segments,
         "zones": checker.check_zones,
     }
@@ -2804,6 +2806,12 @@ def run_selected_checks(
             and only_set is None
             and checker.mask_copper_request is None
         ):
+            continue
+
+        # width_consistency is a heuristic routing-quality audit; it is
+        # opt-in (``--only width_consistency``) so it never changes the
+        # verdict of an existing board or of gates that count warnings.
+        if category == "width_consistency" and only_set is None:
             continue
 
         # Skip if --only specified and this category not in it
