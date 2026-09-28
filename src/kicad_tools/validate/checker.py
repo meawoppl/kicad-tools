@@ -291,6 +291,7 @@ class DRCChecker:
         "check_single_pad_nets",
         "check_pad_grid_alignment",
         "check_via_in_pad",
+        "check_via_under_body",
         "check_width_consistency",
         "check_zero_length_segments",
         "check_zones",
@@ -376,6 +377,10 @@ class DRCChecker:
         # unknown ids to the fab-blocking Manufacturing bucket.
         "connector_edge_access": CATEGORY_ADVISORY,
         "connector_edge_distance": CATEGORY_ADVISORY,
+        # Via under package body: an inspection / rework advisory, not a
+        # fab-blocking defect.  Explicit entry REQUIRED -- the ``via``
+        # prefix fallback would file it under Manufacturing.
+        "via_under_body": CATEGORY_ADVISORY,
         "copper_sliver": CATEGORY_ADVISORY,
         # Trace width-consistency audit: heuristic routing-quality triage
         # (width islands / unexplained neck-downs), never fab-blocking.
@@ -1354,6 +1359,25 @@ class DRCChecker:
 
         merged = {**(self.width_consistency_options or {}), **options}
         rule = WidthConsistencyRule(**merged)  # type: ignore[arg-type]
+        return self._absolutize(rule.check(self.pcb, self.design_rules))
+
+    def check_via_under_body(self) -> DRCResults:
+        """Check for vias hidden under QFN/DFN/SON/LGA package bodies.
+
+        Flags vias whose copper overlaps the Fab (or courtyard fallback)
+        body outline of a bottom-terminated package, except
+        thermal vias inside the footprint's own exposed pad on its net.
+        Warning severity, advisory category.  Tune selection or severity
+        through :class:`~kicad_tools.validate.rules.via_under_body.ViaUnderBodyRule`
+        directly; waive individual findings via ``.kct_waivers.json``.
+
+        Returns:
+            DRCResults containing ``via_under_body`` violations (one per
+            offending via/footprint pair).
+        """
+        from .rules.via_under_body import ViaUnderBodyRule
+
+        rule = ViaUnderBodyRule()
         return self._absolutize(rule.check(self.pcb, self.design_rules))
 
     def check_zero_length_segments(self) -> DRCResults:

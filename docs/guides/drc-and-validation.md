@@ -521,6 +521,26 @@ results = rule.check(pcb, design_rules)
 
 Increase via pad size or use larger drill.
 
+### Via Under Package Body
+
+**Warning:** `via_under_body` — `Via-1a2b3c4d (net 'SDA') ... is under the package body of U3 (Package_DFN_QFN:QFN-24-1EP_4x4mm...)`
+
+KiCad's DRC accepts a via hidden under a QFN/DFN/SON/LGA body as long as it
+clears the pads, but after assembly it can't be probed, inspected or
+reworked, and an untented via under a bottom-terminated part can short to
+the exposed body. The body outline is the footprint's `F.Fab`/`B.Fab`
+outline, falling back to the courtyard when the footprint has no Fab
+outline. Thermal vias inside the part's own exposed pad, on that pad's
+net, are allowed.
+
+**Fix:** Move the via outside the package outline, or waive it in
+`.kct_waivers.json` with `"items": ["Via-1a2b3c4d", "U3"]`. The rule is
+advisory (warning severity), so it only fails `kct check` under `--strict`.
+From the Python API, `ViaUnderBodyRule` takes `footprint_pattern` (default
+`QFN|DFN|SON|LGA`; QFP and BGA are opt-in), `include_references`,
+`exclude_references`, `allow_thermal_pad_vias`, `fallback_to_courtyard`
+and `severity`.
+
 ## Complete Example: Pre-Fab Validation
 
 ```python
