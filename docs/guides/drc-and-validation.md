@@ -480,8 +480,8 @@ from kicad_tools.validate.rules import WidthConsistencyRule
 
 rule = WidthConsistencyRule(
     max_island_length_mm=2.0,
-    clearance_mm=0.15,        # default: design_rules.min_clearance_mm
-    report_justified=True,    # also emit justified neck-downs as info
+    clearance_mm=0.15,  # default: design_rules.min_clearance_mm
+    report_justified=True,  # also emit justified neck-downs as info
     severity="warning",
 )
 results = rule.check(pcb, design_rules)
